@@ -1,0 +1,11 @@
+flask
+flask-sqlalchemy
+flask-jwt-extended
+werkzeug
+python-dotenv
+marshmallow
+pymysql
+
+# Testing
+pytest
+pytest-cov
