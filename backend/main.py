@@ -11,11 +11,15 @@ from backend.common.logging_config import setup_logging
 from backend.auth.routes import auth_bp
 from backend.departments.routes import departments_bp
 from backend.doctors.routes import doctors_bp
+from backend.availability.routes import availability_bp
+from backend.appointments.routes import appointments_bp
 
 # Force SQLAlchemy to see all models
 from backend.auth import models as auth_models
 from backend.departments import models as department_models
 from backend.doctors import models as doctor_models
+from backend.availability import models as availability_models
+from backend.appointments import models as appointment_models
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,8 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(departments_bp)
     app.register_blueprint(doctors_bp)
+    app.register_blueprint(availability_bp)
+    app.register_blueprint(appointments_bp)
     logger.info("Blueprints registered")
 
     @app.route("/health", methods=["GET"])

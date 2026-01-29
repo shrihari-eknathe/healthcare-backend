@@ -53,6 +53,21 @@ def admin_user(app):
 
 
 @pytest.fixture
+def member_user(app):
+    """Create a member user in the test database."""
+    with app.app_context():
+        user = User(
+            email="member@test.com",
+            password=hash_password("password123"),
+            role="MEMBER"
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        return {"id": user.id, "email": user.email, "role": user.role}
+
+
+@pytest.fixture
 def admin_token(app, admin_user):
     """Generate JWT token for admin user."""
     with app.app_context():
@@ -64,6 +79,23 @@ def admin_token(app, admin_user):
 
 
 @pytest.fixture
+def member_token(app, member_user):
+    """Generate JWT token for member user."""
+    with app.app_context():
+        token = create_access_token(
+            identity=member_user["id"],
+            additional_claims={"role": member_user["role"]}
+        )
+        return token
+
+
+@pytest.fixture
 def auth_headers(admin_token):
     """Return headers with admin JWT token."""
     return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture
+def member_headers(member_token):
+    """Return headers with member JWT token."""
+    return {"Authorization": f"Bearer {member_token}"}
