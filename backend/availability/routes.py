@@ -8,10 +8,10 @@ from backend.common.exceptions import AppException
 from backend.availability.schemas import AvailabilityCreateSchema
 from backend.availability.service import (
     create_availability,
-    get_doctor_availability,
     get_available_slots,
     delete_availability,
-    list_all_availability
+    list_all_availability,
+    get_my_availability
 )
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ availability_bp = Blueprint("availability", __name__, url_prefix="/availability"
 @availability_bp.route("", methods=["POST"])
 @require_roles("DOCTOR", "ADMIN")
 def create_availability_api():
-    """Create a new availability slot. Only DOCTOR can add their own availability."""
+    """Create a new availability slot."""
     logger.info("Received request to create availability")
 
     claims = get_jwt()
@@ -56,10 +56,32 @@ def create_availability_api():
     }, 201
 
 
+@availability_bp.route("/my", methods=["GET"])
+@require_roles("DOCTOR")
+def get_my_availability_api():
+    """Get the logged-in doctor's availability slots."""
+    logger.info("Received request to get own availability")
+    
+    current_user_id = get_jwt_identity()
+    slots = get_my_availability(current_user_id)
+    
+    return [
+        {
+            "id": slot.id,
+            "doctor_id": slot.doctor_id,
+            "date": str(slot.date),
+            "start_time": str(slot.start_time),
+            "end_time": str(slot.end_time),
+            "is_booked": slot.is_booked
+        }
+        for slot in slots
+    ]
+
+
 @availability_bp.route("/doctor/<int:doctor_id>", methods=["GET"])
 @jwt_required()
 def get_doctor_availability_api(doctor_id):
-    """Get all availability slots for a specific doctor."""
+    """Get available slots for a specific doctor."""
     logger.info(f"Received request to get availability for doctor {doctor_id}")
 
     slots = get_available_slots(doctor_id)
@@ -80,7 +102,7 @@ def get_doctor_availability_api(doctor_id):
 @availability_bp.route("", methods=["GET"])
 @require_roles("ADMIN")
 def list_all_availability_api():
-    """List all availability slots (Admin only)."""
+    """List all availability slots (admin only)."""
     logger.info("Received request to list all availability")
 
     slots = list_all_availability()

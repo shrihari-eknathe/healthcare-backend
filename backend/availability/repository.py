@@ -20,50 +20,34 @@ class AvailabilityRepository:
             is_booked=False
         )
         db.session.add(availability)
-        db.session.commit()
-        logger.info(f"Availability created with id: {availability.id}")
         return availability
 
     def find_by_id(self, availability_id: int) -> Availability | None:
         """Find availability by ID."""
-        logger.debug(f"Finding availability by id: {availability_id}")
         return db.session.get(Availability, availability_id)
+
+    def find_by_id_with_lock(self, availability_id: int) -> Availability | None:
+        """Find availability by ID with row lock (prevents double booking)."""
+        return Availability.query.with_for_update().filter_by(id=availability_id).first()
 
     def find_by_doctor_id(self, doctor_id: int) -> list[Availability]:
         """Find all availability slots for a doctor."""
-        logger.debug(f"Finding availability for doctor: {doctor_id}")
         return Availability.query.filter_by(doctor_id=doctor_id).all()
 
     def find_available_by_doctor_id(self, doctor_id: int) -> list[Availability]:
         """Find available (not booked) slots for a doctor."""
-        logger.debug(f"Finding available slots for doctor: {doctor_id}")
-        return Availability.query.filter_by(
-            doctor_id=doctor_id,
-            is_booked=False
-        ).all()
+        return Availability.query.filter_by(doctor_id=doctor_id, is_booked=False).all()
 
     def get_all(self) -> list[Availability]:
         """Get all availability slots."""
-        logger.debug("Fetching all availability slots")
         return Availability.query.all()
-
-    def update(self, availability: Availability) -> Availability:
-        """Update availability slot."""
-        logger.debug(f"Updating availability id: {availability.id}")
-        db.session.commit()
-        logger.info(f"Availability updated: {availability.id}")
-        return availability
 
     def delete(self, availability: Availability) -> None:
         """Delete availability slot."""
-        logger.debug(f"Deleting availability id: {availability.id}")
         db.session.delete(availability)
-        db.session.commit()
-        logger.info(f"Availability deleted: {availability.id}")
 
     def check_overlap(self, doctor_id: int, date: date, start_time: time, end_time: time) -> bool:
         """Check if there's an overlapping slot."""
-        logger.debug(f"Checking for overlapping slots for doctor {doctor_id}")
         existing = Availability.query.filter(
             Availability.doctor_id == doctor_id,
             Availability.date == date,
@@ -73,5 +57,4 @@ class AvailabilityRepository:
         return existing is not None
 
 
-# Singleton instance
 availability_repository = AvailabilityRepository()

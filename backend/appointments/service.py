@@ -4,43 +4,44 @@ from backend.appointments.repository import appointment_repository
 from backend.availability.repository import availability_repository
 from backend.doctors.repository import doctor_repository
 from backend.common.exceptions import AppException, ForbiddenError
+from backend.common.db import db
 
 logger = logging.getLogger(__name__)
 
 
 def book_appointment(availability_id: int, member_id: int) -> Appointment:
-    """
-    Book an appointment.
-    Only MEMBER can book appointments.
-    Prevents double booking.
-    """
+    """Book an appointment with row lock to prevent double booking."""
     logger.info(f"Booking appointment for member {member_id} with availability {availability_id}")
 
-    # Get the availability slot
-    availability = availability_repository.find_by_id(availability_id)
-    if not availability:
-        raise AppException("Availability slot not found")
+    try:
+        # Lock the row to prevent race conditions
+        availability = availability_repository.find_by_id_with_lock(availability_id)
+        
+        if not availability:
+            raise AppException("Availability slot not found")
 
-    # Check if already booked (prevent double booking)
-    if availability.is_booked:
-        raise AppException("This time slot is already booked")
+        if availability.is_booked:
+            raise AppException("This time slot is already booked")
 
-    # Create the appointment
-    appointment = appointment_repository.create(
-        member_id=member_id,
-        doctor_id=availability.doctor_id,
-        availability_id=availability.id,
-        date=availability.date,
-        start_time=availability.start_time,
-        end_time=availability.end_time
-    )
+        appointment = appointment_repository.create(
+            member_id=member_id,
+            doctor_id=availability.doctor_id,
+            availability_id=availability.id,
+            date=availability.date,
+            start_time=availability.start_time,
+            end_time=availability.end_time
+        )
 
-    # Mark the availability slot as booked
-    availability.is_booked = True
-    availability_repository.update(availability)
+        availability.is_booked = True
+        db.session.commit()
 
-    logger.info(f"Appointment booked: {appointment.id}")
-    return appointment
+        logger.info(f"Appointment booked: {appointment.id}")
+        return appointment
+    
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to book appointment: {str(e)}")
+        raise
 
 
 def get_member_appointments(member_id: int) -> list[Appointment]:
@@ -56,18 +57,13 @@ def get_doctor_appointments(doctor_id: int) -> list[Appointment]:
 
 
 def get_all_appointments() -> list[Appointment]:
-    """Get all appointments (for admin)."""
+    """Get all appointments (admin only)."""
     logger.info("Getting all appointments")
     return appointment_repository.get_all()
 
 
 def cancel_appointment(appointment_id: int, current_user_id: int, current_user_role: str) -> Appointment:
-    """
-    Cancel an appointment.
-    - MEMBER can cancel their own appointment
-    - DOCTOR can cancel their own appointment
-    - ADMIN can cancel any appointment
-    """
+    """Cancel an appointment."""
     logger.info(f"Cancelling appointment {appointment_id}")
 
     appointment = appointment_repository.find_by_id(appointment_id)
@@ -80,16 +76,19 @@ def cancel_appointment(appointment_id: int, current_user_id: int, current_user_r
     # Check authorization
     if current_user_role == "MEMBER" and appointment.member_id != current_user_id:
         raise ForbiddenError("You can only cancel your own appointments")
+    
+    if current_user_role == "DOCTOR":
+        doctor = doctor_repository.find_by_user_id(current_user_id)
+        if not doctor or appointment.doctor_id != doctor.id:
+            raise ForbiddenError("You can only cancel your own appointments")
 
-    # Update appointment status
     appointment.status = "CANCELLED"
-    appointment_repository.update(appointment)
 
-    # Free up the availability slot
     availability = availability_repository.find_by_id(appointment.availability_id)
     if availability:
         availability.is_booked = False
-        availability_repository.update(availability)
+
+    db.session.commit()
 
     logger.info(f"Appointment {appointment_id} cancelled")
     return appointment

@@ -8,37 +8,33 @@ logger = logging.getLogger(__name__)
 class DoctorRepository:
     """Repository for Doctor database operations."""
 
-    def create(self, name: str, email: str) -> Doctor:
+    def create(self, name: str, email: str, user_id: int = None) -> Doctor:
         """Create a new doctor."""
-        logger.debug(f"Creating doctor with name: {name}, email: {email}")
-        doctor = Doctor(name=name, email=email)
+        logger.debug(f"Creating doctor: {name}")
+        doctor = Doctor(name=name, email=email, user_id=user_id)
         db.session.add(doctor)
-        db.session.commit()
-        logger.info(f"Doctor created with id: {doctor.id}")
         return doctor
 
     def find_by_id(self, doctor_id: int) -> Doctor | None:
         """Find a doctor by ID."""
-        logger.debug(f"Finding doctor by id: {doctor_id}")
         return db.session.get(Doctor, doctor_id)
 
     def find_by_email(self, email: str) -> Doctor | None:
         """Find a doctor by email."""
-        logger.debug(f"Finding doctor by email: {email}")
         return Doctor.query.filter_by(email=email).first()
+
+    def find_by_user_id(self, user_id: int) -> Doctor | None:
+        """Find a doctor by their linked user ID."""
+        return Doctor.query.filter_by(user_id=user_id).first()
 
     def get_all(self) -> list[Doctor]:
         """Get all doctors."""
-        logger.debug("Fetching all doctors")
         return Doctor.query.all()
 
-    def update(self, doctor: Doctor) -> Doctor:
-        """Update a doctor (commit changes)."""
-        logger.debug(f"Updating doctor id: {doctor.id}")
-        db.session.commit()
-        logger.info(f"Doctor updated: {doctor.id}")
+    def link_user(self, doctor: Doctor, user_id: int) -> Doctor:
+        """Link a doctor to a user account."""
+        doctor.user_id = user_id
         return doctor
 
 
-# Singleton instance
 doctor_repository = DoctorRepository()

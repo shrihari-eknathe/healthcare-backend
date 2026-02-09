@@ -1,14 +1,17 @@
 import logging
 from flask import Blueprint, request
+from flask_jwt_extended import get_jwt_identity
 from marshmallow import ValidationError
 
 from backend.common.rbac import require_roles
 from backend.common.exceptions import AppException
-from backend.doctors.schemas import DoctorCreateSchema, DoctorAssignSchema
+from backend.doctors.schemas import DoctorCreateSchema, DoctorAssignSchema, DoctorLinkUserSchema
 from backend.doctors.service import (
     create_doctor,
     list_doctors,
-    assign_doctor_to_department
+    assign_doctor_to_department,
+    link_doctor_to_user,
+    get_doctor_by_user_id
 )
 
 logger = logging.getLogger(__name__)
@@ -19,7 +22,7 @@ doctors_bp = Blueprint("doctors", __name__, url_prefix="/doctors")
 @doctors_bp.route("", methods=["POST"])
 @require_roles("ADMIN")
 def create_doctor_api():
-    """Create a new doctor."""
+    """Create a new doctor (admin only)."""
     logger.info("Received request to create doctor")
     
     schema = DoctorCreateSchema()
@@ -29,20 +32,25 @@ def create_doctor_api():
         logger.warning(f"Validation error: {err.messages}")
         raise AppException(str(err.messages))
 
-    doctor = create_doctor(data["name"], data["email"])
-    logger.info(f"Doctor created successfully: {doctor.id}")
+    doctor = create_doctor(
+        name=data["name"],
+        email=data["email"],
+        user_id=data.get("user_id")
+    )
+    logger.info(f"Doctor created: {doctor.id}")
     
     return {
         "id": doctor.id,
         "name": doctor.name,
-        "email": doctor.email
+        "email": doctor.email,
+        "user_id": doctor.user_id
     }, 201
 
 
 @doctors_bp.route("", methods=["GET"])
 @require_roles("ADMIN")
 def list_doctors_api():
-    """List all doctors."""
+    """List all doctors (admin only)."""
     logger.info("Received request to list doctors")
     
     doctors = list_doctors()
@@ -52,16 +60,35 @@ def list_doctors_api():
             "id": d.id,
             "name": d.name,
             "email": d.email,
+            "user_id": d.user_id,
             "department": d.department.name if d.department else None
         }
         for d in doctors
     ]
 
 
+@doctors_bp.route("/me", methods=["GET"])
+@require_roles("DOCTOR")
+def get_my_doctor_profile():
+    """Get the logged-in doctor's profile."""
+    user_id = get_jwt_identity()
+    
+    doctor = get_doctor_by_user_id(user_id)
+    if not doctor:
+        raise AppException("No doctor profile linked to your account")
+    
+    return {
+        "id": doctor.id,
+        "name": doctor.name,
+        "email": doctor.email,
+        "department": doctor.department.name if doctor.department else None
+    }
+
+
 @doctors_bp.route("/assign", methods=["POST"])
 @require_roles("ADMIN")
 def assign_doctor_api():
-    """Assign a doctor to a department."""
+    """Assign a doctor to a department (admin only)."""
     logger.info("Received request to assign doctor to department")
     
     schema = DoctorAssignSchema()
@@ -71,10 +98,30 @@ def assign_doctor_api():
         logger.warning(f"Validation error: {err.messages}")
         raise AppException(str(err.messages))
 
-    assign_doctor_to_department(
-        data["doctor_id"],
-        data["department_id"]
-    )
+    assign_doctor_to_department(data["doctor_id"], data["department_id"])
     
     logger.info("Doctor assigned successfully")
     return {"message": "Doctor assigned successfully"}
+
+
+@doctors_bp.route("/<int:doctor_id>/link-user", methods=["POST"])
+@require_roles("ADMIN")
+def link_doctor_to_user_api(doctor_id):
+    """Link a doctor profile to a user account (admin only)."""
+    logger.info(f"Received request to link doctor {doctor_id} to user")
+    
+    schema = DoctorLinkUserSchema()
+    try:
+        data = schema.load(request.get_json())
+    except ValidationError as err:
+        logger.warning(f"Validation error: {err.messages}")
+        raise AppException(str(err.messages))
+
+    doctor = link_doctor_to_user(doctor_id, data["user_id"])
+    
+    logger.info(f"Doctor {doctor_id} linked to user {data['user_id']}")
+    return {
+        "message": "Doctor linked to user successfully",
+        "doctor_id": doctor.id,
+        "user_id": doctor.user_id
+    }
